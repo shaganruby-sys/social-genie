@@ -1,0 +1,133 @@
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+export default function SocialGenie() {
+  const [link, setLink] = useState("");
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-indigo-600 to-blue-600 text-white">
+      {/* NAVBAR */}
+      <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <h1 className="text-2xl font-bold">🧞‍♂️ Social Genie</h1>
+        <div className="flex gap-3">
+          <Button variant="secondary" className="text-black">
+            Login
+          </Button>
+          <Button className="bg-black text-white hover:bg-gray-900">
+            Sign Up
+          </Button>
+        </div>
+      </div>
+
+      {/* HERO */}
+      <div className="max-w-6xl mx-auto px-6 py-16 text-center">
+        <motion.h2
+          initial={{ opacity: 0, y: -40 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-5xl font-bold mb-6"
+        >
+          Grow Faster with AI Social Automation 🚀
+        </motion.h2>
+
+        <p className="text-xl opacity-90 mb-8">
+          Analyze content, catch trends, and auto-distribute across social
+          media for maximum reach.
+        </p>
+
+        <div className="flex gap-3 justify-center">
+          <Input
+            placeholder="Paste a link or post..."
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            className="text-black w-96"
+          />
+          <Button className="bg-black text-white hover:bg-gray-900">
+            Launch Genie ✨
+          </Button>
+        </div>
+      </div>
+
+      {/* FEATURES */}
+      <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6 px-6 pb-20">
+        {[
+          {
+            title: "📈 Trend AI",
+            desc: "Detects viral topics and optimizes your posts automatically."
+          },
+          {
+            title: "🌍 Auto Distribution",
+            desc: "Cross-posts to multiple platforms with smart formatting."
+          },
+          {
+            title: "📊 Analytics Dashboard",
+            desc: "Subscribers track reach, clicks, and engagement in real time."
+          }
+        ].map((f, i) => (
+          <motion.div key={i} whileHover={{ scale: 1.05 }}>
+            <Card className="bg-white text-black rounded-2xl shadow-xl">
+              <CardContent className="p-6">
+                <h3 className="text-xl font-bold mb-2">{f.title}</h3>
+                <p>{f.desc}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* PRICING */}
+      <div className="bg-black/30 py-20 px-6">
+        <h2 className="text-4xl font-bold text-center mb-10">Plans</h2>
+
+        <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
+          {[
+            { name: "Creator", price: "$19/mo" },
+            { name: "Pro", price: "$49/mo" },
+            { name: "Enterprise", price: "Custom" }
+          ].map((p, i) => (
+            <Card key={i} className="bg-white text-black rounded-2xl">
+              <CardContent className="p-8 text-center">
+                <h3 className="text-2xl font-bold mb-3">{p.name}</h3>
+                <p className="text-3xl font-bold mb-4">{p.price}</p>
+                <Button className="w-full">Get Started</Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* DASHBOARD PREVIEW */}
+      <div className="max-w-6xl mx-auto px-6 pb-20 text-center">
+        <h2 className="text-4xl font-bold mb-6">Subscriber Dashboard</h2>
+        <p className="opacity-90 mb-10">
+          After login, users see post performance, engagement growth, and
+          platform-wise reach.
+        </p>
+
+        <Card className="bg-white text-black rounded-2xl shadow-xl">
+          <CardContent className="p-8 grid md:grid-cols-3 gap-6">
+            <div>
+              <h3 className="text-xl font-bold">Total Reach</h3>
+              <p className="text-3xl">120K</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Engagement</h3>
+              <p className="text-3xl">8.4%</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Posts Published</h3>
+              <p className="text-3xl">56</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* FOOTER */}
+      <div className="text-center py-10 opacity-80">
+        © 2026 Social Genie — AI Social Automation
+      </div>
+    </div>
+  );
+}
