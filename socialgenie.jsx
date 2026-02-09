@@ -1,3 +1,4 @@
+"use client";
 /*  SocialGenie.jsx  (Single-file UI preview)
     ✅ Upload this ONE file to GitHub to preview the full UI flow (Landing → Auth → Onboarding → App → Admin)
     ✅ Works as a standalone React component in Vite/CRA/Next (client-side only)
