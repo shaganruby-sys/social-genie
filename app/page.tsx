@@ -1,7 +1,5 @@
-import dynamic from "next/dynamic";
-
-const SocialGenie = dynamic(() => import("./SocialGenie"), { ssr: false });
+import ClientOnly from "./ClientOnly";
 
 export default function Page() {
-  return <SocialGenie />;
+  return <ClientOnly />;
 }
