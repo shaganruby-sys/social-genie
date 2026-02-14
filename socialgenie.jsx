@@ -1,36 +1,43 @@
 "use client";
-/*  SocialGenie.jsx  (Single-file UI preview)
-    ✅ Upload this ONE file to GitHub to preview the full UI flow (Landing → Auth → Onboarding → App → Admin)
-    ✅ Works as a standalone React component in Vite/CRA/Next (client-side only)
-    ✅ No Firebase needed for preview — uses localStorage mock data (easy to swap later)
+/*  SocialGenie.jsx (Refined for Next.js App Router)
+    ✅ Fixes: "window is not defined" (no window/localStorage usage during initial render)
+    ✅ Works in Next.js 16+ (Turbopack) as a Client Component
+    ✅ Uses localStorage ONLY after mount via useEffect
 
-    How to use:
-    - Vite: put in src/SocialGenie.jsx and render <SocialGenie /> in main.jsx
-    - CRA: put in src/SocialGenie.jsx and render <SocialGenie /> in App.js
-    - Next.js: put in app/SocialGenie.jsx and import into app/page.jsx
+    How to use in your Next.js app:
+    1) Save this file at: social-genie/app/SocialGenie.jsx
+    2) In social-genie/app/page.tsx, render it:
 
-    Tailwind:
-    - If you already use Tailwind, UI will look perfect.
-    - If not, it still runs, just looks plain.
+       import SocialGenie from "./SocialGenie";
+       export default function Page(){ return <SocialGenie/>; }
 */
 
 import React, { useEffect, useMemo, useState } from "react";
 
-/* -------------------- Small utilities -------------------- */
+/* -------------------- Safe localStorage helpers -------------------- */
+const isBrowser = () => typeof window !== "undefined";
+
 const ls = {
   get(key, fallback) {
+    if (!isBrowser()) return fallback;
     try {
-      const v = localStorage.getItem(key);
+      const v = window.localStorage.getItem(key);
       return v ? JSON.parse(v) : fallback;
     } catch {
       return fallback;
     }
   },
   set(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (!isBrowser()) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
   },
   del(key) {
-    localStorage.removeItem(key);
+    if (!isBrowser()) return;
+    try {
+      window.localStorage.removeItem(key);
+    } catch {}
   },
 };
 
@@ -96,7 +103,11 @@ function generateDrafts({ topic, audience, tone, goal }) {
     tone === "Bold" ? "🔥 " : tone === "Funny" ? "😂 " : tone === "Friendly" ? "✨ " : "";
 
   const mk = (arr) =>
-    arr.map((v) => ({ ...v, text: toneTag + v.text, hookScore: scoreHook(v.text) }));
+    arr.map((v) => ({
+      ...v,
+      text: toneTag + v.text,
+      hookScore: scoreHook(v.text),
+    }));
 
   return {
     telegram: mk([
@@ -239,42 +250,57 @@ function Pill({ children }) {
 
 /* -------------------- Main Component -------------------- */
 export default function SocialGenie() {
-  // Simple hash router: #/ , #/pricing, #/auth/signup, #/app, etc
-  const [route, setRoute] = useState(() => window.location.hash.replace("#", "") || "/");
+  // ✅ Route starts safe (no window on init). Set real route after mount.
+  const [route, setRoute] = useState("/");
+
+  // ✅ Load localStorage after mount (safe)
+  const [dbState, setDbState] = useState(null);
+  const [session, setSession] = useState(null);
+
+  // Load db/session once on client
   useEffect(() => {
-    const onHash = () => setRoute(window.location.hash.replace("#", "") || "/");
+    setDbState(
+      ls.get("sg_db", {
+        users: {},
+        workspaces: {},
+        members: {},
+        invites: {},
+        integrations: {},
+        topics: {},
+        drafts: {},
+        posts: {},
+        audit: {},
+        usage: {},
+      })
+    );
+    setSession(ls.get("sg_session", null));
+  }, []);
+
+  // Persist changes
+  useEffect(() => {
+    if (!dbState) return;
+    ls.set("sg_db", dbState);
+  }, [dbState]);
+
+  useEffect(() => {
+    if (!dbState) return; // session persistence requires client init too
+    ls.set("sg_session", session);
+  }, [session, dbState]);
+
+  // Hash router after mount
+  useEffect(() => {
+    if (!isBrowser()) return;
+    const getRoute = () => window.location.hash.replace("#", "") || "/";
+    setRoute(getRoute());
+
+    const onHash = () => setRoute(getRoute());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Mock DB
-  const [dbState, setDbState] = useState(() =>
-    ls.get("sg_db", {
-      users: {}, // uid -> {email, password, verified, defaultWid}
-      workspaces: {}, // wid -> {name, ownerUid, plan, isTeam, limits}
-      members: {}, // wid -> {uid -> {role,email}}
-      invites: {}, // wid -> [{email, role, status}]
-      integrations: {}, // wid -> [{id, provider, meta}]
-      topics: {}, // wid -> [{id, topic, brief, createdAt}]
-      drafts: {}, // wid -> [{id, topicId, platform, variants, selected}]
-      posts: {}, // wid -> [{id, platform, content, scheduledAt, status, approvedBy}]
-      audit: {}, // wid -> [{id, action, time, platform, postId}]
-      usage: {}, // wid -> {topicsThisMonth, postsTodayDate, postsTodayCount}
-    })
-  );
-  useEffect(() => ls.set("sg_db", dbState), [dbState]);
+  // Guard until client state is loaded
+  if (!dbState) return null;
 
-  // Session
-  const [session, setSession] = useState(() => ls.get("sg_session", null)); // {uid}
-  useEffect(() => ls.set("sg_session", session), [session]);
-
-  const me = session ? dbState.users[session.uid] : null;
-  const wid = me?.defaultWid || null;
-  const ws = wid ? dbState.workspaces[wid] : null;
-  const myRole = wid ? dbState.members?.[wid]?.[session?.uid]?.role : null;
-  const isAdmin = myRole === "owner" || myRole === "admin";
-
-  // Helpers to mutate DB
   const mutate = (fn) =>
     setDbState((prev) => {
       const next = structuredClone(prev);
@@ -282,12 +308,21 @@ export default function SocialGenie() {
       return next;
     });
 
-  const goto = (path) => (window.location.hash = "#" + path);
+  const goto = (path) => {
+    if (!isBrowser()) return;
+    window.location.hash = "#" + path;
+  };
 
-  // Simulated scheduler (runs in browser) to mark scheduled posts as posted
+  const me = session ? dbState.users?.[session.uid] : null;
+  const wid = me?.defaultWid || null;
+  const ws = wid ? dbState.workspaces?.[wid] : null;
+  const myRole = wid ? dbState.members?.[wid]?.[session?.uid]?.role : null;
+  const isAdmin = myRole === "owner" || myRole === "admin";
+
+  // Simulated scheduler (client) to mark scheduled posts as posted
   useEffect(() => {
+    if (!wid) return;
     const t = setInterval(() => {
-      if (!wid) return;
       mutate((s) => {
         const posts = s.posts[wid] || [];
         const now = Date.now();
@@ -310,9 +345,9 @@ export default function SocialGenie() {
       });
     }, 1200);
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wid]);
 
-  // Enforcements
   const enforceAddPlatform = () => {
     if (!wid) return { ok: false, reason: "Workspace not set." };
     const max = ws?.limits?.maxPlatforms ?? 0;
@@ -327,15 +362,13 @@ export default function SocialGenie() {
     if (!wid) return { ok: false, reason: "Workspace not set." };
     const lim = ws?.limits?.dailyPostLimit ?? 0;
     if (lim <= 0) return { ok: false, reason: "Daily post limit is 0. Upgrade." };
-
     const key = `postsToday_${new Date().toISOString().slice(0, 10)}`;
-    const used = (dbState.usage?.[wid]?.[key] ?? 0);
+    const used = dbState.usage?.[wid]?.[key] ?? 0;
     if (used >= lim) return { ok: false, reason: `Daily post limit reached (${used}/${lim}). Upgrade.` };
     return { ok: true, used, lim, key };
   };
 
   /* -------------------- Pages -------------------- */
-
   const PageShell = ({ children }) => (
     <main className="min-h-screen bg-black text-white">
       <div className="absolute inset-0 -z-10">
@@ -354,18 +387,18 @@ export default function SocialGenie() {
         <span className="text-white/40 text-sm ml-2">.online</span>
       </div>
       <nav className="flex items-center gap-4 text-white/80">
-        <a className="hover:text-white cursor-pointer" onClick={() => goto("/pricing")}>
+        <span className="hover:text-white cursor-pointer" onClick={() => goto("/pricing")}>
           Pricing
-        </a>
-        <a className="hover:text-white cursor-pointer" onClick={() => goto("/demo")}>
+        </span>
+        <span className="hover:text-white cursor-pointer" onClick={() => goto("/demo")}>
           Demo
-        </a>
+        </span>
         {me ? (
           <>
-            <a className="hover:text-white cursor-pointer" onClick={() => goto("/app")}>
+            <span className="hover:text-white cursor-pointer" onClick={() => goto("/app")}>
               App
-            </a>
-            <a
+            </span>
+            <span
               className="hover:text-white cursor-pointer"
               onClick={() => {
                 setSession(null);
@@ -374,26 +407,25 @@ export default function SocialGenie() {
               }}
             >
               Logout
-            </a>
+            </span>
           </>
         ) : (
           <>
-            <a className="hover:text-white cursor-pointer" onClick={() => goto("/auth/login")}>
+            <span className="hover:text-white cursor-pointer" onClick={() => goto("/auth/login")}>
               Login
-            </a>
-            <a
+            </span>
+            <span
               className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 cursor-pointer"
               onClick={() => goto("/auth/signup")}
             >
               Start Free
-            </a>
+            </span>
           </>
         )}
       </nav>
     </header>
   );
 
-  /* Landing */
   const Landing = () => (
     <PageShell>
       <TopNav />
@@ -417,7 +449,9 @@ export default function SocialGenie() {
                 Try Live Demo
               </GlowButton>
             </div>
-            <div className="mt-5 text-sm text-white/60">✅ Email verification • ✅ Approval-first posting • ✅ Monthly subscriptions</div>
+            <div className="mt-5 text-sm text-white/60">
+              ✅ Email verification • ✅ Approval-first posting • ✅ Monthly subscriptions
+            </div>
           </div>
 
           <NeonCard className="p-6">
@@ -456,7 +490,6 @@ export default function SocialGenie() {
     </PageShell>
   );
 
-  /* Pricing */
   const Pricing = () => {
     const [mode, setMode] = useState("solo");
     const plans = {
@@ -520,7 +553,6 @@ export default function SocialGenie() {
     );
   };
 
-  /* Demo */
   const Demo = () => {
     const [topic, setTopic] = useState("AI revolution impact on Indian IT sector");
     const [audience, setAudience] = useState("Indian creators & founders");
@@ -594,7 +626,6 @@ export default function SocialGenie() {
     );
   };
 
-  /* Auth: Signup/Login/Verify (mock) */
   const Signup = () => {
     const [email, setEmail] = useState("");
     const [pass, setPass] = useState("");
@@ -629,7 +660,6 @@ export default function SocialGenie() {
                   if (pass.length < 6) return setMsg("Password must be at least 6 characters");
 
                   mutate((s) => {
-                    // If invited, auto-accept in onboarding; for preview we keep it simple.
                     const newUid = uid();
                     s.users[newUid] = { email, password: pass, verified: false, defaultWid: null };
                   });
@@ -726,7 +756,6 @@ export default function SocialGenie() {
             <div className="mt-5">
               <GlowButton
                 onClick={() => {
-                  // verify the latest created user for preview convenience
                   const uids = Object.keys(dbState.users);
                   if (!uids.length) return setMsg("No users found. Signup first.");
                   const latest = uids[uids.length - 1];
@@ -752,14 +781,13 @@ export default function SocialGenie() {
     );
   };
 
-  /* Onboarding */
   const Onboarding = () => {
     const [name, setName] = useState("My SocialGenie Workspace");
-    const [isTeam, setIsTeam] = useState(false);
+    const [teamMode, setTeamMode] = useState(false);
     const [plan, setPlan] = useState("free");
     const [msg, setMsg] = useState(null);
 
-    const limits = useMemo(() => limitsFor(plan, isTeam), [plan, isTeam]);
+    const limits = useMemo(() => limitsFor(plan, teamMode), [plan, teamMode]);
 
     if (!me) {
       goto("/auth/login");
@@ -789,18 +817,18 @@ export default function SocialGenie() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     className={`rounded-xl px-4 py-3 border ${
-                      !isTeam ? "border-cyan-400/40 bg-white/10" : "border-white/10 bg-white/5"
+                      !teamMode ? "border-cyan-400/40 bg-white/10" : "border-white/10 bg-white/5"
                     }`}
-                    onClick={() => setIsTeam(false)}
+                    onClick={() => setTeamMode(false)}
                   >
                     <div className="font-semibold">Solo</div>
                     <div className="text-xs text-white/60 mt-1">1 seat</div>
                   </button>
                   <button
                     className={`rounded-xl px-4 py-3 border ${
-                      isTeam ? "border-cyan-400/40 bg-white/10" : "border-white/10 bg-white/5"
+                      teamMode ? "border-cyan-400/40 bg-white/10" : "border-white/10 bg-white/5"
                     }`}
-                    onClick={() => setIsTeam(true)}
+                    onClick={() => setTeamMode(true)}
                   >
                     <div className="font-semibold">Team</div>
                     <div className="text-xs text-white/60 mt-1">Roles + approvals</div>
@@ -815,8 +843,8 @@ export default function SocialGenie() {
                     onChange={(e) => setPlan(e.target.value)}
                   >
                     <option value="free">Free</option>
-                    <option value="starter">Starter {isTeam ? "Team ($74.97)" : "($24.99)"}</option>
-                    <option value="pro">Pro {isTeam ? "Team ($149.97)" : "($49.99)"}</option>
+                    <option value="starter">Starter {teamMode ? "Team ($74.97)" : "($24.99)"}</option>
+                    <option value="pro">Pro {teamMode ? "Team ($149.97)" : "($49.99)"}</option>
                     <option value="ent">Enterprise (Custom)</option>
                   </select>
                 </div>
@@ -827,11 +855,10 @@ export default function SocialGenie() {
                     if (!name.trim()) return setMsg("Workspace name required.");
                     const newWid = id("ws");
                     mutate((s) => {
-                      s.workspaces[newWid] = { name: name.trim(), ownerUid: session.uid, plan, isTeam, limits };
+                      s.workspaces[newWid] = { name: name.trim(), ownerUid: session.uid, plan, isTeam: teamMode, limits };
                       s.members[newWid] = s.members[newWid] || {};
                       s.members[newWid][session.uid] = { role: "owner", email: me.email };
 
-                      // set default workspace
                       s.users[session.uid].defaultWid = newWid;
 
                       s.integrations[newWid] = [];
@@ -858,7 +885,8 @@ export default function SocialGenie() {
                 <div>
                   <div className="text-sm text-white/60">Current Plan</div>
                   <div className="text-xl font-semibold mt-1">
-                    {plan.toUpperCase()} {isTeam ? <span className="text-cyan-200">(TEAM)</span> : <span className="text-white/60">(SOLO)</span>}
+                    {plan.toUpperCase()}{" "}
+                    {teamMode ? <span className="text-cyan-200">(TEAM)</span> : <span className="text-white/60">(SOLO)</span>}
                   </div>
                 </div>
                 <Pill>Limits</Pill>
@@ -878,9 +906,7 @@ export default function SocialGenie() {
               </div>
 
               <NeonCard className="p-4 mt-4">
-                <div className="text-white/70 text-sm">
-                  Next: Connect Telegram → Create Topic → Approve & Schedule
-                </div>
+                <div className="text-white/70 text-sm">Next: Connect Telegram → Create Topic → Approve & Schedule</div>
               </NeonCard>
             </NeonCard>
           </div>
@@ -889,7 +915,6 @@ export default function SocialGenie() {
     );
   };
 
-  /* App Shell */
   const AppNav = ({ tab, setTab }) => (
     <div className="flex flex-wrap gap-2">
       {[
@@ -976,7 +1001,10 @@ export default function SocialGenie() {
                 </div>
                 <div className="text-white/50">{formatDT(new Date(p.scheduledAt))}</div>
               </div>
-              <div className="mt-2 text-white/70">{p.content.slice(0, 160)}{p.content.length>160?"…":""}</div>
+              <div className="mt-2 text-white/70">
+                {p.content.slice(0, 160)}
+                {p.content.length > 160 ? "…" : ""}
+              </div>
             </div>
           ))}
           {!((dbState.posts[wid] || []).length) && (
@@ -1014,9 +1042,7 @@ export default function SocialGenie() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-xl font-semibold">Integrations</h2>
-            <p className="text-white/70 text-sm mt-1">
-              Plan enforcement enabled. If you hit platform limit, upgrade in Billing.
-            </p>
+            <p className="text-white/70 text-sm mt-1">Plan enforcement enabled.</p>
           </div>
           <Pill>Max platforms: {ws?.limits?.maxPlatforms}</Pill>
         </div>
@@ -1024,9 +1050,7 @@ export default function SocialGenie() {
         <div className="mt-5 grid md:grid-cols-2 gap-4">
           <NeonCard className="p-5">
             <h3 className="font-semibold">Connect Telegram</h3>
-            <p className="text-white/60 text-sm mt-1">
-              Preview mode stores channel ID and enables scheduling.
-            </p>
+            <p className="text-white/60 text-sm mt-1">Preview mode stores channel ID and enables scheduling.</p>
             <input
               className="mt-3 w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3 outline-none"
               value={channelId}
@@ -1064,7 +1088,8 @@ export default function SocialGenie() {
               {list.map((x) => (
                 <div key={x.id} className="rounded-xl border border-white/10 bg-black/30 p-3 flex justify-between">
                   <div className="text-white/80">
-                    <b>{x.provider}</b> <span className="text-white/50">({x.meta?.channelId || ""})</span>
+                    <b>{x.provider}</b>{" "}
+                    <span className="text-white/50">({x.meta?.channelId || ""})</span>
                   </div>
                   <button
                     className="text-white/60 hover:text-white"
@@ -1214,7 +1239,12 @@ export default function SocialGenie() {
                 }`}
                 onClick={() => setPlatform(p)}
               >
-                {p.toUpperCase()} {p === "telegram" ? <span className="text-cyan-200 text-xs ml-1">AUTO</span> : <span className="text-white/50 text-xs ml-1">EXPORT</span>}
+                {p.toUpperCase()}{" "}
+                {p === "telegram" ? (
+                  <span className="text-cyan-200 text-xs ml-1">AUTO</span>
+                ) : (
+                  <span className="text-white/50 text-xs ml-1">EXPORT</span>
+                )}
               </button>
             ))}
           </div>
@@ -1226,7 +1256,12 @@ export default function SocialGenie() {
               draft.variants.map((v, idx) => {
                 const selected = idx === draft.selected;
                 return (
-                  <div key={idx} className={`rounded-xl border p-4 bg-black/30 ${selected ? "border-cyan-400/40" : "border-white/10"}`}>
+                  <div
+                    key={idx}
+                    className={`rounded-xl border p-4 bg-black/30 ${
+                      selected ? "border-cyan-400/40" : "border-white/10"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div className="text-sm text-white/60">
                         Variant {idx + 1} • Hook score <span className="text-white">{v.hookScore}</span>
@@ -1235,8 +1270,12 @@ export default function SocialGenie() {
                         <GlowButton
                           variant="ghost"
                           onClick={() => {
-                            navigator.clipboard.writeText(v.text + "\n\n" + v.hashtags.join(" "));
-                            setMsg("Copied ✅");
+                            if (navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText(v.text + "\n\n" + v.hashtags.join(" "));
+                              setMsg("Copied ✅");
+                            } else {
+                              setMsg("Clipboard not available in this browser.");
+                            }
                           }}
                         >
                           Copy
@@ -1308,14 +1347,12 @@ export default function SocialGenie() {
                     content,
                     scheduledAt: when.toISOString(),
                     status: "scheduled",
-                    approvedBy: session.uid, // approval-first ✅
+                    approvedBy: session.uid,
                   });
 
-                  // increment daily usage
                   s.usage[wid] = s.usage[wid] || {};
                   s.usage[wid][limit.key] = (s.usage[wid][limit.key] || 0) + 1;
 
-                  // audit
                   s.audit[wid] = s.audit[wid] || [];
                   s.audit[wid].unshift({
                     id: id("log"),
@@ -1326,7 +1363,7 @@ export default function SocialGenie() {
                   });
                 });
 
-                setMsg("✅ Approved & scheduled. It will auto-mark as posted in ~1–2 seconds after time.");
+                setMsg("✅ Approved & scheduled. It will auto-mark as posted after scheduled time.");
               }}
             >
               Approve & Schedule Telegram
@@ -1356,7 +1393,10 @@ export default function SocialGenie() {
               </div>
               <div className="text-white/50">{formatDT(new Date(p.scheduledAt))}</div>
             </div>
-            <div className="mt-2 text-white/70">{p.content.slice(0, 220)}{p.content.length>220?"…":""}</div>
+            <div className="mt-2 text-white/70">
+              {p.content.slice(0, 220)}
+              {p.content.length > 220 ? "…" : ""}
+            </div>
           </div>
         ))}
         {!((dbState.posts[wid] || []).length) && <div className="text-white/60">No scheduled posts yet.</div>}
@@ -1380,7 +1420,9 @@ export default function SocialGenie() {
             <h2 className="text-xl font-semibold">Team</h2>
             <p className="text-white/70 text-sm mt-1">Seat cap enforced by plan.</p>
           </div>
-          <Pill>Seats: {members.length}/{maxSeats}</Pill>
+          <Pill>
+            Seats: {members.length}/{maxSeats}
+          </Pill>
         </div>
 
         {!ws?.isTeam ? (
@@ -1462,7 +1504,9 @@ export default function SocialGenie() {
                   <div key={i.id} className="rounded-xl border border-white/10 bg-black/30 p-3 flex justify-between">
                     <div>
                       <div className="text-white/85">{i.email}</div>
-                      <div className="text-white/50 text-xs">{i.role} • {i.status}</div>
+                      <div className="text-white/50 text-xs">
+                        {i.role} • {i.status}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1569,6 +1613,5 @@ export default function SocialGenie() {
   if (route === "/app/onboarding") return <Onboarding />;
   if (route === "/app") return <App />;
 
-  // default
   return <Landing />;
 }
