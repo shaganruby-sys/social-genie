@@ -239,6 +239,10 @@ function Pill({ children }) {
 
 /* -------------------- Main Component -------------------- */
 export default function SocialGenie() {
+useEffect(() => {
+  console.log("SocialGenie loaded ✅");
+  console.log("Firebase project id:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+}, []);
   // Simple hash router: #/ , #/pricing, #/auth/signup, #/app, etc
   const [route, setRoute] = useState(() => window.location.hash.replace("#", "") || "/");
   useEffect(() => {
